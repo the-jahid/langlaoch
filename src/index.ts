@@ -9,7 +9,7 @@ import router from './routes/chat.routes';
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-
+app.use(cors());
 app.use(express.json());
 
 
