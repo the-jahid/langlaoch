@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ChatRole {
+  SYSTEM
+  USER
+  ASSISTANT
+  FUNCTION
+}
+
+model ChatSession {
+  id           String        @id @default(uuid())
+  title        String?
+  status       String        @default("open")
+  systemPrompt String?
+  model        String        @default("gpt-3.5-turbo")
+  params       Json?
+  context      Json?
+  messages     ChatMessage[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id            String       @id @default(uuid())
+  session       ChatSession  @relation(fields: [sessionId], references: [id])
+  sessionId     String
+
+  userMessage  String?
+  assistantMessage String?
+
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([sessionId])
+  @@map("chat_messages")
+}
+
+
+
