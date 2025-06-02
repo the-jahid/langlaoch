@@ -1,3 +1,52 @@
+// generator client {
+//   provider = "prisma-client-js"
+// }
+
+// datasource db {
+//   provider = "postgresql"
+//   url      = env("DATABASE_URL")
+// }
+
+// enum ChatRole {
+//   SYSTEM
+//   USER
+//   ASSISTANT
+//   FUNCTION
+// }
+
+
+// model ChatSession {
+//   id           String        @id @default(uuid())
+//   title        String?
+//   status       String        @default("open")
+//   systemPrompt String?
+//   model        String        @default("gpt-3.5-turbo")
+//   params       Json?
+//   context      Json?
+//   messages     ChatMessage[]
+//   createdAt    DateTime      @default(now())
+//   updatedAt    DateTime      @updatedAt
+
+//   @@map("chat_sessions")
+// }
+
+// model ChatMessage {
+//   id            String       @id @default(uuid())
+//   session       ChatSession  @relation(fields: [sessionId], references: [id])
+//   sessionId     String
+
+//   userMessage  String?
+//   assistantMessage String?
+
+//   createdAt     DateTime     @default(now())
+//   updatedAt     DateTime     @updatedAt
+
+//   @@index([sessionId])
+//   @@map("chat_messages")
+// }
+
+
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -14,35 +63,122 @@ enum ChatRole {
   FUNCTION
 }
 
+enum AgentStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+model Agent {
+  id          String        @id @default(uuid())
+  name        String
+  
+  systemPrompt String
+   model        ModelType    @default(GPT_3_5_TURBO)
+  temperature  Float?       @default(0.7)
+    
+  // Relations
+  sessions     ChatSession[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  
+  @@map("agents")
+}
+
 model ChatSession {
   id           String        @id @default(uuid())
-  title        String?
-  status       String        @default("open")
-  systemPrompt String?
-  model        String        @default("gpt-3.5-turbo")
-  params       Json?
-  context      Json?
+ 
   messages     ChatMessage[]
+  agent        Agent?        @relation(fields: [agentId], references: [id])
+  agentId      String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
   @@map("chat_sessions")
 }
 
+
 model ChatMessage {
-  id            String       @id @default(uuid())
-  session       ChatSession  @relation(fields: [sessionId], references: [id])
-  sessionId     String
+  id               String       @id @default(uuid())
+  session          ChatSession  @relation(fields: [sessionId], references: [id])
+  sessionId        String
 
   userMessage  String?
   assistantMessage String?
-
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-
+  
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  
   @@index([sessionId])
   @@map("chat_messages")
 }
+
+enum ModelType {
+  // ── GPT-4 base models ─────────────────────────────
+  GPT_4                    @map("gpt-4")
+  GPT_4_0314               @map("gpt-4-0314")
+  GPT_4_0613               @map("gpt-4-0613")
+  GPT_4_32K                @map("gpt-4-32k")
+  GPT_4_32K_0314           @map("gpt-4-32k-0314")
+  GPT_4_32K_0613           @map("gpt-4-32k-0613")
+  GPT_4_TURBO              @map("gpt-4-turbo")
+  GPT_4_TURBO_PREVIEW      @map("gpt-4-turbo-preview")
+  GPT_4_0125_PREVIEW       @map("gpt-4-0125-preview")
+  GPT_4_1106_PREVIEW       @map("gpt-4-1106-preview")
+  GPT_4_VISION_PREVIEW     @map("gpt-4-vision-preview")
+
+  // ── GPT-4o (“omni”) family ────────────────────────
+  GPT_4O                   @map("gpt-4o")
+  GPT_4O_2024_05_13        @map("gpt-4o-2024-05-13")
+  GPT_4O_2024_08_06        @map("gpt-4o-2024-08-06")
+  GPT_4O_2024_11_20        @map("gpt-4o-2024-11-20")   // new snapshot
+  GPT_4O_MINI              @map("gpt-4o-mini")
+  GPT_4O_MINI_2024_07_18   @map("gpt-4o-mini-2024-07-18")
+
+  // ── NEW  GPT-4.1 family (Apr 2025) ────────────────
+  GPT_4_1                  @map("gpt-4.1")
+  GPT_4_1_2025_04_14       @map("gpt-4.1-2025-04-14")  // official snapshot
+  GPT_4_1_MINI             @map("gpt-4.1-mini")
+  GPT_4_1_MINI_2025_04_14  @map("gpt-4.1-mini-2025-04-14")
+  GPT_4_1_NANO             @map("gpt-4.1-nano")
+  GPT_4_1_NANO_2025_04_14  @map("gpt-4.1-nano-2025-04-14")
+
+  // ── GPT-4.5 preview models (deprecated but callable) ─
+  GPT_4_5_PREVIEW          @map("gpt-4.5-preview")
+  GPT_4_5_PREVIEW_2025_02_27 @map("gpt-4.5-preview-2025-02-27")
+
+  // ── GPT-3.5 models ────────────────────────────────
+  GPT_3_5_TURBO            @map("gpt-3.5-turbo")
+  GPT_3_5_TURBO_16K        @map("gpt-3.5-turbo-16k")
+  GPT_3_5_TURBO_0301       @map("gpt-3.5-turbo-0301")
+  GPT_3_5_TURBO_0613       @map("gpt-3.5-turbo-0613")
+  GPT_3_5_TURBO_16K_0613   @map("gpt-3.5-turbo-16k-0613")
+  GPT_3_5_TURBO_0125       @map("gpt-3.5-turbo-0125")
+  GPT_3_5_TURBO_1106       @map("gpt-3.5-turbo-1106")
+
+  // ── Legacy instruct models ─────────────────────────
+  GPT_3_5_TURBO_INSTRUCT          @map("gpt-3.5-turbo-instruct")
+  GPT_3_5_TURBO_INSTRUCT_0914     @map("gpt-3.5-turbo-instruct-0914")
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

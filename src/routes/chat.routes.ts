@@ -20,7 +20,7 @@ const createSessionSchema = z.object({
 const sendMessageSchema = z.object({
   role:     z.nativeEnum(ChatRole).default(ChatRole.USER).optional(),
   content:  z.string().min(1, 'Message cannot be empty'),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.any()).optional(), 
 });
 
 /* ------------------------------------------------------------------
