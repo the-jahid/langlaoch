@@ -2,8 +2,7 @@
 import { PrismaClient, Prisma, ChatMessage, ChatSession } from "@prisma/client";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
-import { ServiceError } from "../utils/serviceError";
-import { ensureSessionExists } from "../utils/ensureSession";
+
 
 // Initialize clients with error checking
 const prisma = new PrismaClient();

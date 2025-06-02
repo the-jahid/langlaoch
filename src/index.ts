@@ -1,9 +1,9 @@
 // src/index.ts
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import AppError from './utils/AppError';
+
 import { globalErrorHandler } from './middlewares/globalErrorHandler';
-import router from './routes/chat.routes';
+
 import agentRouter from './routes/agentRoutes';
 import chatSessionRouter from './routes/sessionRoutes';
 import chatRouter from './routes/chatRoutes';
@@ -21,7 +21,7 @@ app.get('/api/v1', (_req: Request, res: Response) => {
 }
 );
 
-app.use('/api/chat', router);
+
 app.use('/api/chat', agentRouter);
 app.use('/api/chat', chatSessionRouter);
 app.use('/api/chat',  chatRouter);
