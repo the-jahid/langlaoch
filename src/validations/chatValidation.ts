@@ -14,7 +14,7 @@ export const CreateChatMessageSchema = z.object({
  * DELETE /chat/:chatId
  */
 export const ChatMessageIdParamSchema = z.object({
-  chatId: z.string().uuid('chatId must be a valid UUID'),
+  sessionId: z.string().uuid('sessionId must be a valid UUID'),
 });
 
 /**

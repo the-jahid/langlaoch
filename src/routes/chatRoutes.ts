@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { validate } from '../middlewares/validate';
 import { ChatMessageIdParamSchema, CreateChatMessageSchema, UpdateChatMessageSchema } from '../validations/chatValidation';
 import { asyncHandler } from '../utils/asyncHandler';
-import { Request, Response } from 'express';
-import { createChat } from '../controllers/chatController';
+
+import { createChat, getChatMessagesBySessionIdcontroller } from '../controllers/chatController';
+
 
 const chatRouter = Router();
 
@@ -15,11 +16,11 @@ chatRouter.post(
 );
 
 
-// Get a single chat message by ID
+// Get a all chat history by session ID
 chatRouter.get(
-  '/chat/:chatId',
+  '/:sessionId',
   validate(ChatMessageIdParamSchema, 'params'),
-  
+  asyncHandler(getChatMessagesBySessionIdcontroller)
 );
 
 // Update a chat message by ID
