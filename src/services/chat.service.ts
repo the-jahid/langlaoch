@@ -3,7 +3,6 @@ import { PrismaClient, Prisma, ChatMessage, ChatSession } from "@prisma/client";
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 
-
 // Initialize clients with error checking
 const prisma = new PrismaClient();
 const openai = new OpenAI();
@@ -72,6 +71,24 @@ type SupabaseDocument = {
   similarity: number;
 };
 
+// Define type for Product
+interface Product {
+  name: string;
+  productId: string;
+  description: string;
+}
+
+// Response type for addMessage that includes products
+interface ChatMessageResponse {
+  id: string;
+  sessionId: string;
+  userMessage: string | null;
+  assistantMessage: string | null;
+  products?: Product[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // Test Supabase connection
 export async function testSupabaseConnection(): Promise<boolean> {
   try {
@@ -80,7 +97,7 @@ export async function testSupabaseConnection(): Promise<boolean> {
       .from('documents')
       .select('count')
       .limit(1)
-      .single();
+      .single()
     
     if (error) {
       console.error('Supabase connection test failed:', error);
@@ -117,7 +134,7 @@ const createChatMessage = async (
 async function getEmbedding(text: string): Promise<number[]> {
   try {
     const res = await openai.embeddings.create({
-      model: "text-embedding-3-large",
+      model: "text-embedding-3-small",
       input: text,
     });
     return res.data[0].embedding;
@@ -152,7 +169,7 @@ async function searchSupabaseEmbedding(query: string): Promise<SupabaseDocument[
     try {
       const { data, error } = await supabase.rpc('match_documents', {
         query_embedding: embedding,
-        match_count: 3,
+        match_count: 5, // Increased to get more results
       });
       
       if (error) {
@@ -179,6 +196,226 @@ async function searchSupabaseEmbedding(query: string): Promise<SupabaseDocument[
     console.error('Error in searchSupabaseEmbedding:', error);
     throw error;
   }
+}
+
+// Enhanced helper function to extract products from documents
+function extractProductsFromDocuments(docs: SupabaseDocument[]): Product[] {
+  const products: Product[] = [];
+  
+  console.log(`\n========== EXTRACTING PRODUCTS FROM ${docs.length} DOCUMENTS ==========`);
+  
+  for (let docIndex = 0; docIndex < docs.length; docIndex++) {
+    const doc = docs[docIndex];
+    
+    try {
+      console.log(`\n---------- DOCUMENT ${docIndex + 1} ----------`);
+      console.log('Document ID:', doc.id);
+      console.log('Full Content:\n', doc.content);
+      console.log('\nMetadata:', JSON.stringify(doc.metadata, null, 2));
+      console.log('----------------------------------------\n');
+      
+      const content = doc.content;
+      let extractedProducts: Product[] = [];
+      
+      // Check if metadata has complete product info
+      if (doc.metadata && (doc.metadata.productId || doc.metadata.product_id || doc.metadata.id)) {
+        const productId = String(doc.metadata.productId || doc.metadata.product_id || doc.metadata.id);
+        const name = String(doc.metadata.name || doc.metadata.product_name || doc.metadata.title || '');
+        const description = String(doc.metadata.description || doc.metadata.details || '');
+        
+        if (productId && (name || description)) {
+          extractedProducts.push({
+            productId,
+            name: name || `Product ${productId}`,
+            description: description || 'No description available'
+          });
+          console.log('Extracted from metadata:', extractedProducts[0]);
+        }
+      }
+      
+      // Extract from content if not found in metadata or metadata incomplete
+      if (extractedProducts.length === 0 || 
+          (extractedProducts[0] && extractedProducts[0].name === `Product ${extractedProducts[0].productId}`)) {
+        
+        // Find all product IDs in the content
+        const productIdMatches = Array.from(content.matchAll(/Product ID[:\s]*(\d+)/gi));
+        
+        for (const match of productIdMatches) {
+          const productId = match[1];
+          const startIndex = match.index || 0;
+          
+          // Find the section for this product
+          // Look backwards from Product ID to find the name
+          const beforeContent = content.substring(0, startIndex);
+          const beforeLines = beforeContent.split('\n').filter(l => l.trim());
+          
+          let name = '';
+          let description = '';
+          
+          // The name is often the last non-empty line before "Product ID"
+          if (beforeLines.length > 0) {
+            const lastLine = beforeLines[beforeLines.length - 1];
+            // Clean up common patterns
+            name = lastLine
+              .replace(/^\d+\.\s*/, '') // Remove numbering
+              .replace(/\*\*/g, '')      // Remove bold markers
+              .replace(/^[-•]\s*/, '')   // Remove bullet points
+              .trim();
+            
+            // Validate it's a reasonable name
+            if (name.length > 100 || name.includes(':') || name.toLowerCase().includes('description')) {
+              name = '';
+            }
+          }
+          
+          // Find description after Product ID
+          const afterContent = content.substring(startIndex + match[0].length);
+          
+          // Look for explicit Description: label
+          const descMatch = afterContent.match(/Description[:\s]*([\s\S]*?)(?=\n\n|\n\s*[-•]|\nProduct ID|$)/i);
+          if (descMatch) {
+            description = descMatch[1].trim();
+          } else {
+            // Take the next paragraph after Product ID
+            const nextParagraph = afterContent.match(/^\s*[-•]?\s*(.+?)(?=\n\n|\n\s*[-•]|$)/);
+            if (nextParagraph) {
+              description = nextParagraph[1].trim();
+            }
+          }
+          
+          // Clean up description
+          if (description) {
+            description = description
+              .replace(/\s*\n\s*/g, ' ')  // Replace newlines with spaces
+              .replace(/\s+/g, ' ')        // Normalize spaces
+              .substring(0, 300)           // Limit length
+              .trim();
+          }
+          
+          // Check if we already have this product from metadata
+          const existingProduct = extractedProducts.find(p => p.productId === productId);
+          if (existingProduct) {
+            // Update with better name/description if found
+            if (name && existingProduct.name === `Product ${productId}`) {
+              existingProduct.name = name;
+            }
+            if (description && existingProduct.description === 'No description available') {
+              existingProduct.description = description;
+            }
+          } else {
+            extractedProducts.push({
+              productId,
+              name: name || `Product ${productId}`,
+              description: description || 'No description available'
+            });
+          }
+        }
+      }
+      
+      // If still no products, try to extract from structured content
+      if (extractedProducts.length === 0) {
+        // Look for patterns like "1. Product Name" or "## Product Name"
+        const structuredMatches = Array.from(content.matchAll(/(?:^|\n)(?:\d+\.\s*|#+\s*)([^\n]+)[\s\S]*?(?:Product ID|ID)[:\s]*(\d+)/gmi));
+        
+        for (const match of structuredMatches) {
+          const name = match[1].replace(/\*\*/g, '').trim();
+          const productId = match[2];
+          
+          // Find description in the same block
+          const blockStart = match.index || 0;
+          const blockEnd = content.indexOf('\n\n', blockStart + match[0].length);
+          const block = content.substring(blockStart, blockEnd > 0 ? blockEnd : undefined);
+          
+          const descMatch = block.match(/Description[:\s]*([\s\S]+?)(?=\n\n|$)/i);
+          const description = descMatch ? descMatch[1].trim() : block.substring(0, 200);
+          
+          extractedProducts.push({
+            productId,
+            name: name || `Product ${productId}`,
+            description: description || 'No description available'
+          });
+        }
+      }
+      
+      // Add all extracted products
+      products.push(...extractedProducts);
+      console.log(`Extracted ${extractedProducts.length} products from document ${docIndex + 1}:`, extractedProducts);
+      
+    } catch (error) {
+      console.error(`Error extracting from document ${docIndex + 1}:`, error);
+    }
+  }
+  
+  // Remove duplicates based on productId
+  const uniqueProducts = products.filter((product, index, self) =>
+    index === self.findIndex((p) => p.productId === product.productId)
+  );
+  
+  console.log(`\n========== EXTRACTION COMPLETE ==========`);
+  console.log(`Total unique products: ${uniqueProducts.length}`);
+  console.log('Products:', JSON.stringify(uniqueProducts, null, 2));
+  console.log(`=========================================\n`);
+  
+  return uniqueProducts;
+}
+
+// Helper function to extract products from assistant message as fallback
+function extractProductsFromAssistantMessage(message: string): Product[] {
+  const products: Product[] = [];
+  
+  try {
+    console.log('Extracting products from assistant message...');
+    
+    // Split by numbered items (1., 2., etc.)
+    const sections = message.split(/(?=\d+\.\s*\*\*)/);
+    
+    for (const section of sections) {
+      if (!section.trim()) continue;
+      
+      // Extract product name from bold text
+      const nameMatch = section.match(/\d+\.\s*\*\*([^*]+)\*\*/);
+      const name = nameMatch ? nameMatch[1].trim() : '';
+      
+      // Extract product ID
+      const idMatch = section.match(/Product ID\*?\*?:\s*(\d+)/i);
+      if (!idMatch) continue;
+      const productId = idMatch[1];
+      
+      // Extract description
+      let description = '';
+      const descMatch = section.match(/Description\*?\*?:\s*([^-\n]+(?:\n(?!.*:)[^-\n]+)*)/i);
+      if (descMatch) {
+        description = descMatch[1].trim();
+      }
+      
+      // Extract additional details if present
+      const detailsMatch = section.match(/Details\*?\*?:\s*([\s\S]*?)(?=\n\s*-\s*\*\*[A-Z]|$)/i);
+      if (detailsMatch && !description) {
+        description = detailsMatch[1].trim();
+      }
+      
+      // Clean up description
+      description = description
+        .replace(/\s*\n\s*/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      if (productId) {
+        products.push({
+          productId,
+          name: name || `Product ${productId}`,
+          description: description || 'No description available'
+        });
+        
+        console.log(`Extracted from assistant message: ${name} (${productId})`);
+      }
+    }
+    
+  } catch (error) {
+    console.error('Error extracting products from assistant message:', error);
+  }
+  
+  return products;
 }
 
 // Retry wrapper with exponential backoff
@@ -216,8 +453,9 @@ async function withRetry<T>(
 }
 
 // Tool function implementations
-async function executeToolCall(toolCall: OpenAI.Chat.ChatCompletionMessageToolCall): Promise<string> {
+async function executeToolCall(toolCall: OpenAI.Chat.ChatCompletionMessageToolCall): Promise<{ result: string; products: Product[] }> {
   const args = JSON.parse(toolCall.function.arguments);
+  let products: Product[] = [];
   
   switch (toolCall.function.name) {
     case "search_knowledge_base":
@@ -230,16 +468,35 @@ async function executeToolCall(toolCall: OpenAI.Chat.ChatCompletionMessageToolCa
         console.log('Search completed, found documents:', docs.length);
         
         if (!docs || docs.length === 0) {
-          return JSON.stringify({ 
-            message: "No documents found matching your query.",
-            results: []
-          });
+          return {
+            result: JSON.stringify({ 
+              message: "No documents found matching your query.",
+              results: [],
+              products: []
+            }),
+            products: []
+          };
         }
         
-        return JSON.stringify({
-          message: `Found ${docs.length} relevant document(s).`,
-          results: docs
+        // Log document content for debugging
+        docs.forEach((doc, index) => {
+          console.log(`\n--- Document ${index + 1} ---`);
+          console.log('Content preview:', doc.content.substring(0, 300));
+          console.log('Metadata:', JSON.stringify(doc.metadata, null, 2));
         });
+        
+        // Extract products from documents
+        products = extractProductsFromDocuments(docs);
+        console.log('\nTotal products extracted:', products);
+        
+        return {
+          result: JSON.stringify({
+            message: `Found ${docs.length} relevant document(s) containing ${products.length} product(s).`,
+            results: docs,
+            products: products
+          }),
+          products: products
+        };
       } catch (error) {
         console.error('Error searching knowledge base:', error);
         
@@ -257,17 +514,24 @@ async function executeToolCall(toolCall: OpenAI.Chat.ChatCompletionMessageToolCa
           hint = 'Supabase environment variables are not configured.';
         }
         
-        return JSON.stringify({ 
-          error: 'Failed to search knowledge base',
-          message: errorMessage,
-          details: errorDetails,
-          hint: hint,
-          code: error instanceof Error && 'code' in error ? (error as any).code : ''
-        });
+        return {
+          result: JSON.stringify({ 
+            error: 'Failed to search knowledge base',
+            message: errorMessage,
+            details: errorDetails,
+            hint: hint,
+            code: error instanceof Error && 'code' in error ? (error as any).code : '',
+            products: []
+          }),
+          products: []
+        };
       }
     
     default:
-      return JSON.stringify({ error: `Unknown tool: ${toolCall.function.name}` });
+      return {
+        result: JSON.stringify({ error: `Unknown tool: ${toolCall.function.name}` }),
+        products: []
+      };
   }
 }
 
@@ -279,13 +543,27 @@ export const addMessage = async ({
   sessionId: string; 
   content: string; 
   agentId: string; 
-}): Promise<ChatMessage> => {
+}): Promise<ChatMessageResponse> => {
   try {
     const agent = await prisma.agent.findUnique({
       where: { id: agentId },
       select: { systemPrompt: true }
     });
+    
+    // Enhanced system prompt to handle product extraction
     const systemPromptText = agent?.systemPrompt ?? "You are a helpful assistant.";
+    const enhancedSystemPrompt = `${systemPromptText}
+
+IMPORTANT: When users ask about products or information in the knowledge base:
+1. You MUST use the search_knowledge_base tool
+2. Present ALL products found with their Product IDs clearly
+3. Structure your response to list each product with:
+   - Product ID
+   - Product Name
+   - Description
+   - Any other relevant details
+
+The search tool will return products in a structured format. Make sure to present all of them to the user.`;
 
     const previousMessages = await prisma.chatMessage.findMany({
       where: { sessionId },
@@ -322,7 +600,7 @@ export const addMessage = async ({
     ];
 
     const messages: ChatMessageItem[] = [
-      { role: "system", content: systemPromptText },
+      { role: "system", content: enhancedSystemPrompt },
       ...chatHistory,
       { role: "user", content }
     ];
@@ -341,9 +619,84 @@ export const addMessage = async ({
 
     const { tool_calls: toolCalls, content: assistantContent } = choice.message;
 
-    // If no tool calls, return the assistant's response directly
+    // Track all products found
+    let allProducts: Product[] = [];
+
+    // If no tool calls, check if we should have used the tool
     if (!toolCalls?.length) {
-      return await createChatMessage(sessionId, content, assistantContent || null);
+      // Check if the query is about knowledge base or products
+      const shouldUseSearch = /knowledge\s*base|product|information|what\s+do\s+you\s+have|inventory|catalog/i.test(content);
+      
+      if (shouldUseSearch) {
+        console.log('Query seems to be about knowledge base but no tool was called. Forcing search...');
+        
+        // Force a search
+        const searchResult = await executeToolCall({
+          id: 'forced-search',
+          type: 'function',
+          function: {
+            name: 'search_knowledge_base',
+            arguments: JSON.stringify({ query: content })
+          }
+        });
+        
+        allProducts = searchResult.products;
+        
+        // Create a new completion with the search results
+        messages.push({
+          role: "assistant",
+          content: null,
+          tool_calls: [{
+            id: 'forced-search',
+            type: 'function',
+            function: {
+              name: 'search_knowledge_base',
+              arguments: JSON.stringify({ query: content })
+            }
+          }]
+        });
+        
+        messages.push({
+          tool_call_id: 'forced-search',
+          role: "tool",
+          name: 'search_knowledge_base',
+          content: searchResult.result
+        });
+        
+        // Get new response with search results
+        const retryResponse = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+          tools,
+        });
+        
+        const retryChoice = retryResponse.choices[0];
+        if (retryChoice?.message?.content) {
+          const createdMessage = await createChatMessage(sessionId, content, retryChoice.message.content);
+          
+          return {
+            id: createdMessage.id,
+            sessionId: createdMessage.sessionId,
+            userMessage: createdMessage.userMessage,
+            assistantMessage: createdMessage.assistantMessage,
+            products: allProducts,
+            createdAt: createdMessage.createdAt,
+            updatedAt: createdMessage.updatedAt
+          };
+        }
+      }
+      
+      // Normal response without tools
+      const createdMessage = await createChatMessage(sessionId, content, assistantContent || null);
+      return {
+        id: createdMessage.id,
+        sessionId: createdMessage.sessionId,
+        userMessage: createdMessage.userMessage,
+        assistantMessage: createdMessage.assistantMessage,
+        products: [],
+        createdAt: createdMessage.createdAt,
+        updatedAt: createdMessage.updatedAt
+      };
     }
 
     // Add assistant message with tool calls to conversation
@@ -356,7 +709,13 @@ export const addMessage = async ({
     // Execute all tool calls
     for (const toolCall of toolCalls) {
       try {
-        const result = await executeToolCall(toolCall);
+        const { result, products } = await executeToolCall(toolCall);
+        
+        // Accumulate all products
+        if (products.length > 0) {
+          allProducts.push(...products);
+          console.log(`Tool call ${toolCall.id} found ${products.length} products`);
+        }
         
         messages.push({
           tool_call_id: toolCall.id,
@@ -380,10 +739,31 @@ export const addMessage = async ({
       }
     }
 
+    // Remove duplicates from all products
+    let uniqueProducts = allProducts.filter((product, index, self) =>
+      index === self.findIndex((p) => p.productId === product.productId)
+    );
+
+    console.log(`Total unique products found: ${uniqueProducts.length}`);
+
     // Second API call with tool results
+    const followUpMessages = [...messages];
+    
+    // Add a system message to ensure product information is included
+    if (uniqueProducts.length > 0) {
+      const productList = uniqueProducts.map(p => 
+        `- Product ID: ${p.productId}, Name: ${p.name}`
+      ).join('\n');
+      
+      followUpMessages.push({
+        role: "system",
+        content: `The search found ${uniqueProducts.length} products. Make sure to mention all of them in your response:\n${productList}`
+      });
+    }
+
     const followUpResponse = await openai.chat.completions.create({
       model: "gpt-4o",
-      messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+      messages: followUpMessages as OpenAI.Chat.ChatCompletionMessageParam[],
       tools,
     });
 
@@ -399,7 +779,63 @@ export const addMessage = async ({
       console.warn('Additional tool calls detected in follow-up response, ignoring for now');
     }
 
-    return await createChatMessage(sessionId, content, finalContent || null);
+    // If no products were found from tools but the assistant message contains product info, try to extract
+    if (uniqueProducts.length === 0 && finalContent && finalContent.includes('Product ID')) {
+      console.log('No products found from tools, attempting to extract from assistant message');
+      const extractedProducts = extractProductsFromAssistantMessage(finalContent);
+      if (extractedProducts.length > 0) {
+        uniqueProducts.push(...extractedProducts);
+      }
+    }
+    
+    // ENHANCEMENT: If products were found but lack names/descriptions, try to enrich them from assistant message
+    if (uniqueProducts.length > 0 && finalContent) {
+      console.log('Enriching products with names and descriptions from assistant message...');
+      const assistantProducts = extractProductsFromAssistantMessage(finalContent);
+      
+      // Merge the information
+      uniqueProducts = uniqueProducts.map(product => {
+        // Find matching product in assistant's response
+        const assistantProduct = assistantProducts.find(ap => ap.productId === product.productId);
+        
+        if (assistantProduct) {
+          // Use assistant's data if our extraction didn't find good name/description
+          return {
+            productId: product.productId,
+            name: (product.name === `Product ${product.productId}` && assistantProduct.name !== `Product ${product.productId}`) 
+              ? assistantProduct.name 
+              : product.name,
+            description: (product.description === 'No description available' && assistantProduct.description !== 'No description available')
+              ? assistantProduct.description
+              : product.description
+          };
+        }
+        
+        return product;
+      });
+      
+      console.log('Enriched products:', JSON.stringify(uniqueProducts, null, 2));
+    }
+
+    // Create the message
+    const createdMessage = await createChatMessage(
+      sessionId, 
+      content, 
+      finalContent || null
+    );
+
+    console.log(`Final response created with ${uniqueProducts.length} products`);
+
+    // Return the message with products array included
+    return {
+      id: createdMessage.id,
+      sessionId: createdMessage.sessionId,
+      userMessage: createdMessage.userMessage,
+      assistantMessage: createdMessage.assistantMessage,
+      products: uniqueProducts,
+      createdAt: createdMessage.createdAt,
+      updatedAt: createdMessage.updatedAt
+    };
 
   } catch (error) {
     console.error('Error in addMessage:', error);

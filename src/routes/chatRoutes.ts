@@ -27,7 +27,7 @@ chatRouter.get(
 chatRouter.patch(
   '/chat/:chatId',
   validate(UpdateChatMessageSchema),
- 
+  
 );
 
 // Delete a chat message by ID
