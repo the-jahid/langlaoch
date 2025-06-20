@@ -23,14 +23,14 @@ chatRouter.get(
   asyncHandler(getChatMessagesBySessionIdcontroller)
 );
 
-// Update a chat message by ID
+
 chatRouter.patch(
   '/chat/:chatId',
   validate(UpdateChatMessageSchema),
   
 );
 
-// Delete a chat message by ID
+
 chatRouter.delete(
   '/chat/:chatId',
   validate(ChatMessageIdParamSchema, 'params'),

@@ -10,14 +10,14 @@ import { asyncHandler } from '../utils/asyncHandler';
 
 const chatSessionRouter = Router();
 
-// Create a new chat session
+
 chatSessionRouter.post(
   '/session/:agentId',
   asyncHandler(create)
   
 );
 
-// Delete a chat session by ID
+
 chatSessionRouter.delete(
   '/session/:sessionId',
   validate(SessionIdParamSchema, 'params'),

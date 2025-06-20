@@ -14,12 +14,12 @@ import { asyncHandler } from '../utils/asyncHandler';
 const agentRouter = Router();
 
 
-// Define routes for agent operations
+
 agentRouter.post('/agent', validate(CreateAgentSchema), asyncHandler(create));
 
-// Get a single agent by ID
+
 agentRouter.get('/agent/:agentId',  asyncHandler(get));
-// update an agent by ID
+
 agentRouter.patch('/agent/:agentId', validate(UpdateAgentSchema), asyncHandler(update));
 agentRouter.delete('/agent/:agentId',  asyncHandler(remove));
 
