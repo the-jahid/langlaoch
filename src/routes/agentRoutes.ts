@@ -13,8 +13,6 @@ import { asyncHandler } from '../utils/asyncHandler';
 
 const agentRouter = Router();
 
-
-
 agentRouter.post('/agent', validate(CreateAgentSchema), asyncHandler(create));
 
 

@@ -788,18 +788,18 @@ The search tool will return products in a structured format. Make sure to presen
       }
     }
     
-    // ENHANCEMENT: If products were found but lack names/descriptions, try to enrich them from assistant message
+  
     if (uniqueProducts.length > 0 && finalContent) {
       console.log('Enriching products with names and descriptions from assistant message...');
       const assistantProducts = extractProductsFromAssistantMessage(finalContent);
       
-      // Merge the information
+      
       uniqueProducts = uniqueProducts.map(product => {
-        // Find matching product in assistant's response
+     
         const assistantProduct = assistantProducts.find(ap => ap.productId === product.productId);
         
         if (assistantProduct) {
-          // Use assistant's data if our extraction didn't find good name/description
+          
           return {
             productId: product.productId,
             name: (product.name === `Product ${product.productId}` && assistantProduct.name !== `Product ${product.productId}`) 
@@ -817,7 +817,7 @@ The search tool will return products in a structured format. Make sure to presen
       console.log('Enriched products:', JSON.stringify(uniqueProducts, null, 2));
     }
 
-    // Create the message
+    
     const createdMessage = await createChatMessage(
       sessionId, 
       content, 
@@ -855,5 +855,5 @@ export const getChatMessagesBySessionId = async (sessionId: string): Promise<Cha
   }
 };
 
-// Initialize and test connection on module load
+
 testSupabaseConnection().catch(console.error);
